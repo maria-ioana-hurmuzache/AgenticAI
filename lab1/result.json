@@ -1,0 +1,25 @@
+{
+    "id": "chatcmpl-308",
+    "object": "chat.completion",
+    "created": 1790918758,
+    "model": "qwen2.5:1.5b",
+    "system_fingerprint": "fp_ollama",
+    "choices": [
+        {
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": "The command to list all TCP listening sockets is `netstat` or `ss` with the `-t` and `-l` options. Here's how you can use it:\n\n### Using `netstat`\n```bash\nnetstat -tuln\n```\n\n### Using `ss`\n```bash\nss -tuln\n```\n\n### Explanation:\n- `-t`: Show TCP connections.\n- `-u`: Show UDP connections.\n- `-l`: Show listening sockets.\n- `-n`: Show numeric addresses and port numbers.\n\nThese commands will display a list of all TCP and UDP listening sockets on your system."
+            },
+            "finish_reason": "stop"
+        }
+    ],
+    "usage": {
+        "prompt_tokens": 29,
+        "prompt_tokens_details": {
+            "cached_tokens": 0
+        },
+        "completion_tokens": 126,
+        "total_tokens": 155
+    }
+}
