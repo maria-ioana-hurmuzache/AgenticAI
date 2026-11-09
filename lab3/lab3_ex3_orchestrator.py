@@ -6,6 +6,7 @@
 """
 import random
 import sys
+import re
 from enum import Enum
 from pathlib import Path
 
@@ -124,7 +125,89 @@ def delegate_log_triage(filename: str) -> str:
 # --- STRETCH: make the worker a real sub-agent (see the lab text) ------------
 # def grep_log(pattern, max_lines=20) / count_by_ip(pattern) / context_around(pattern, after=40)
 # def delegate_log_triage_agent(filename) -> runs run_agent() with those tools, returns JSON or ERROR
+def grep_log(pattern: str, max_lines: int = 20) -> str:
+    """Return at most max_lines lines from the log that match the given regex pattern.
 
+    Args:
+        pattern: Regex pattern to search for in the log.
+        max_lines: Maximum number of matching lines to return.
+    """
+    try:
+        raw = safe_path(LOG_NAME).read_text()
+    except (PermissionError, FileNotFoundError) as e:
+        return f"ERROR: {e}"
+    matching_lines = [line for line in raw.splitlines() if re.search(pattern, line)]
+    return "\n".join(matching_lines[:max_lines])
+
+
+def count_by_ip(pattern: str) -> str:
+    """Count the number of log lines matching the given regex pattern, grouped by source IP.
+
+    Args:
+        pattern: Regex pattern to search for in the log.
+    """
+    try:
+        raw = safe_path(LOG_NAME).read_text()
+    except (PermissionError, FileNotFoundError) as e:
+        return f"ERROR: {e}"
+    ip_counts = {}
+    for line in raw.splitlines():
+        if re.search(pattern, line):
+            match = re.search(r"from (\d+\.\d+\.\d+\.\d+)", line)
+            if match:
+                ip = match.group(1)
+                ip_counts[ip] = ip_counts.get(ip, 0) + 1
+    return json.dumps(ip_counts)
+
+
+def context_around(pattern: str, after: int = 40) -> str:
+    """Return the log lines matching the given regex pattern, plus up to 'after' lines after each match.
+
+    Args:
+        pattern: Regex pattern to search for in the log.
+        after: Number of lines to include after each matching line.
+    """
+    try:
+        raw = safe_path(LOG_NAME).read_text()
+    except (PermissionError, FileNotFoundError) as e:
+        return f"ERROR: {e}"
+    lines = raw.splitlines()
+    result_lines = []
+    for i, line in enumerate(lines):
+        if re.search(pattern, line):
+            result_lines.append(line)
+            result_lines.extend(lines[i + 1:i + 1 + after])
+    return "\n".join(result_lines)
+
+
+def delegate_log_triage_agent(filename: str) -> str:
+    """Hand a raw log file to a specialist sub-agent with its own fresh context.
+    Returns a compact JSON triage report (severity, attacker IPs, evidence, firewall rules).
+
+    Args:
+        filename: Log file name in the workspace, e.g. 'auth.log'.
+    """
+    try:
+        raw = safe_path(filename).read_text()
+    except (PermissionError, FileNotFoundError) as e:
+        return f"ERROR: {e}"
+
+    tools = [grep_log, count_by_ip, context_around]
+
+    result = run_agent(
+        f"<log name='{filename}'>\n{raw}\n</log>",
+        tools=tools,
+        system_instruction=WORKER_SYSTEM,
+        max_steps=5,
+        requires_approval=frozenset(),
+        approver=lambda tool_name, args: Decision(True),
+    )
+
+    if result.stop_reason == "error":
+        return f"ERROR: {result.answer}"
+    
+    return result.answer
+    
 
 # --- HITL-protected report writer -----------------------------------------
 def write_incident_report(filename: str, markdown_report: str) -> str:
@@ -159,9 +242,9 @@ ORCH_SYSTEM = (
 )
 
 if __name__ == "__main__":
-    mode = sys.argv[1] if len(sys.argv) > 1 else "orchestrator"
+    mode = sys.argv[1] if len(sys.argv) > 1 else "subagent"
     make_noisy_log()
-    first_tool = {"single": read_file, "orchestrator": delegate_log_triage}[mode]  # STRETCH: add "subagent"
+    first_tool = {"single": read_file, "orchestrator": delegate_log_triage, "subagent": delegate_log_triage_agent}[mode]  # STRETCH: add "subagent"
     how = "Read it yourself" if mode == "single" else "Use your specialist worker"
     result = run_agent(
         f"Triage '{LOG_NAME}'. {how}, then write the incident report to 'incident_report.md'.",
